@@ -20,3 +20,9 @@ class GreedyCasino:
     def __init__(self, rng=None):
         self.rng = rng if rng is not None else np.random.default_rng()
         self._current_intent = None
+
+    def get_intent(self):
+        b = self.rng.binomial(1, 0.5)
+        d = self.rng.binomial(1, 0.5)
+        self._current_intent = int(b + 2 * d)
+        return self._current_intent
