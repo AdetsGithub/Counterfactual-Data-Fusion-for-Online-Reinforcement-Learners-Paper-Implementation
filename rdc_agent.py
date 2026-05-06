@@ -14,3 +14,35 @@ class RDCAgent:
         self.rng = rng if rng is not None else np.random.default_rng()
         self.Q_table = np.zeros((num_intents, num_arms), dtype=np.float64)
         self.N_table = np.zeros((num_intents, num_arms), dtype=np.int64)
+
+    def _validate_intent(self, intent):
+        intent = int(intent)
+        if not 0 <= intent < self.num_intents:
+            raise ValueError(
+                f"intent must be an integer from 0 to {self.num_intents - 1}"
+            )
+        return intent
+
+    def _validate_action(self, action):
+        action = int(action)
+        if not 0 <= action < self.num_arms:
+            raise ValueError(
+                f"action must be an integer from 0 to {self.num_arms - 1}"
+            )
+        return action
+
+    def choose_action(self, intent):
+        intent = self._validate_intent(intent)
+        if self.rng.random() < self.epsilon:
+            return int(self.rng.integers(self.num_arms))
+
+        row = self.Q_table[intent]
+        best = np.flatnonzero(row == row.max())
+        return int(self.rng.choice(best))
+
+    def update(self, intent, action, reward):
+        intent = self._validate_intent(intent)
+        action = self._validate_action(action)
+        self.N_table[intent, action] += 1
+        n = self.N_table[intent, action]
+        self.Q_table[intent, action] += (reward - self.Q_table[intent, action]) / n
