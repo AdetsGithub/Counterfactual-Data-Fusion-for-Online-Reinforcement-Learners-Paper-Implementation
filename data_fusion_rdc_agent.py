@@ -72,3 +72,63 @@ class DataFusionRDCAgent(RDCAgent):
         if weight_sum > 0.0:
             return weighted_sum / weight_sum
         return self.cross_intent_estimate(query_action, query_intent)
+
+    def _sigma2_xint(self, query_action, query_intent):
+        query_action = self._validate_action(query_action)
+        query_intent = self._validate_intent(query_intent)
+        total = 0.0
+        count = 0
+        for i in range(self.num_intents):
+            if i == query_intent:
+                continue
+            total += self.get_variance(i, query_action)
+            count += 1
+        if count == 0:
+            return 1.0
+        return total / count
+
+    def _sigma2_xarm(self, query_action, query_intent):
+        query_action = self._validate_action(query_action)
+        query_intent = self._validate_intent(query_intent)
+        k = self.num_intents
+        sum_r = sum(
+            self.get_variance(i, query_action)
+            for i in range(k)
+            if i != query_intent
+        )
+        terms = []
+        for s in range(self.num_arms):
+            if s == query_action:
+                continue
+            sum_s = sum(
+                self.get_variance(i, s) for i in range(k) if i != query_intent
+            )
+            var_sw = self.get_variance(query_intent, s)
+            terms.append((sum_r + sum_s + var_sw) / (2 * k - 1))
+        if not terms:
+            return 1.0
+        return sum(terms) / len(terms)
+
+    def get_fused_estimate(self, intent, action):
+        intent = self._validate_intent(intent)
+        action = self._validate_action(action)
+        e_samp = self.Q_table[intent, action]
+        var_samp = max(self.get_variance(intent, action), _MIN_VARIANCE)
+        e_xint = self.cross_intent_estimate(action, intent)
+        var_xint = max(self._sigma2_xint(action, intent), _MIN_VARIANCE)
+        e_xarm = self.cross_arm_estimate(action, intent)
+        var_xarm = max(self._sigma2_xarm(action, intent), _MIN_VARIANCE)
+        alpha = e_samp / var_samp + e_xint / var_xint + e_xarm / var_xarm
+        beta = 1.0 / var_samp + 1.0 / var_xint + 1.0 / var_xarm
+        return alpha / beta
+
+    def choose_action(self, intent):
+        intent = self._validate_intent(intent)
+        if self.rng.random() < self.epsilon:
+            return int(self.rng.integers(self.num_arms))
+
+        row = np.array(
+            [self.get_fused_estimate(intent, a) for a in range(self.num_arms)]
+        )
+        best = np.flatnonzero(row == row.max())
+        return int(self.rng.choice(best))
