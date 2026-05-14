@@ -1,5 +1,8 @@
 """Greedy Casino simulation comparing Standard MAB, RDC, and Data-Fusion RDC agents."""
 
+import argparse
+
+import matplotlib.pyplot as plt
 import numpy as np
 
 from data_fusion_rdc_agent import DataFusionRDCAgent
@@ -81,3 +84,37 @@ def run_simulation(T=5000, seed=42):
             histories[name].append(wins[name] / t)
 
     return {name: np.array(series) for name, series in histories.items()}
+
+
+def plot_results(histories, output="results.png"):
+    T = len(next(iter(histories.values())))
+    steps = np.arange(1, T + 1)
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    for name, series in histories.items():
+        ax.plot(steps, series, label=name)
+
+    ax.set_xlabel("Step")
+    ax.set_ylabel("Cumulative Average Reward")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(output, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Run Greedy Casino simulation.")
+    parser.add_argument("--steps", type=int, default=5000, help="Total steps T")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument(
+        "--output", default="results.png", help="Output plot path"
+    )
+    args = parser.parse_args()
+
+    histories = run_simulation(T=args.steps, seed=args.seed)
+    plot_results(histories, output=args.output)
+
+
+if __name__ == "__main__":
+    main()
