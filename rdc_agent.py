@@ -7,10 +7,12 @@ import numpy as np
 
 
 class RDCAgent:
-    def __init__(self, num_arms=4, num_intents=4, epsilon=0.1, rng=None):
+    def __init__(self, num_arms=4, num_intents=4, epsilon=0.1, epsilon_min=0.01, epsilon_decay=0.9995, rng=None):
         self.num_arms = num_arms
         self.num_intents = num_intents
         self.epsilon = epsilon
+        self.epsilon_min = epsilon_min
+        self.epsilon_decay = epsilon_decay
         self.rng = rng if rng is not None else np.random.default_rng()
         self.Q_table = np.zeros((num_intents, num_arms), dtype=np.float64)
         self.N_table = np.zeros((num_intents, num_arms), dtype=np.int64)
@@ -46,3 +48,7 @@ class RDCAgent:
         self.N_table[intent, action] += 1
         n = self.N_table[intent, action]
         self.Q_table[intent, action] += (reward - self.Q_table[intent, action]) / n
+
+        # Epsilon decay
+        if self.epsilon > self.epsilon_min:
+            self.epsilon *= self.epsilon_decay
