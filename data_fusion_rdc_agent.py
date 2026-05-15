@@ -20,19 +20,32 @@ class DataFusionRDCAgent(RDCAgent):
         intent = self._validate_intent(intent)
         action = self._validate_action(action)
         n = self.N_table[intent, action]
+        
         if n < 2:
-            return 1.0
+            return 1.0 # High uncertainty for cold start
+            
         p = self.Q_table[intent, action]
-        return p * (1.0 - p)
+        # Clamp probability to prevent variance collapsing to 0
+        p_smoothed = max(0.05, min(0.95, p))
+        
+        # Divide by n to calculate the variance of the sample mean
+        return (p_smoothed * (1.0 - p_smoothed)) / n
 
     def _arm_residual(self, query_action, query_intent):
         query_action = self._validate_action(query_action)
         query_intent = self._validate_intent(query_intent)
         residual = self.datasets.experimental[query_action]
+        
         for i in range(self.num_intents):
             if i == query_intent:
                 continue
-            residual -= self.Q_table[i, query_action] * self.datasets.intent_prior[i]
+            # If unexplored, substitute the experimental dataset average
+            if self.N_table[i, query_action] < 1:
+                est = self.datasets.experimental[query_action]
+            else:
+                est = self.Q_table[i, query_action]
+                
+            residual -= est * self.datasets.intent_prior[i]
         return residual
 
     def cross_intent_estimate(self, query_action, query_intent):
@@ -48,9 +61,15 @@ class DataFusionRDCAgent(RDCAgent):
         denominator = self._arm_residual(alt_arm, query_intent)
         if abs(denominator) <= _MIN_VARIANCE:
             return None
+            
+        # If the alternate arm is unexplored, substitute the experimental average
+        if self.N_table[query_intent, alt_arm] < 1:
+            alt_est = self.datasets.experimental[alt_arm]
+        else:
+            alt_est = self.Q_table[query_intent, alt_arm]
+            
         numerator = (
-            self._arm_residual(query_action, query_intent)
-            * self.Q_table[query_intent, alt_arm]
+            self._arm_residual(query_action, query_intent) * alt_est
         )
         return numerator / denominator
 
