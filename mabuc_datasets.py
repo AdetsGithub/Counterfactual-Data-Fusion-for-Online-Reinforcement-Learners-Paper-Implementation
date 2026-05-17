@@ -7,13 +7,15 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from greedy_casino import GreedyCasino
+
 
 @dataclass(frozen=True)
 class MABUCDatasets:
     """Initial observational and experimental priors for Greedy Casino MABUC.
 
-    Experimental values E[Y_x] equal the row-mean of GreedyCasino.PAYOUT_MATRIX
-    under uniform intent (0.25 * (0.20 + 0.30 + 0.50 + 0.60) = 0.40).
+    Experimental values E[Y_x] equal the row-mean of the payout matrix
+    under uniform intent (mean over intent columns per action row).
     """
 
     observational: np.ndarray  # E[Y|X] — natural win rate per arm
@@ -21,23 +23,32 @@ class MABUCDatasets:
     intent_prior: np.ndarray  # P(I) — probability of each intent profile
 
     def __post_init__(self):
+        k = len(self.observational)
         for name, arr in (
             ("observational", self.observational),
             ("experimental", self.experimental),
             ("intent_prior", self.intent_prior),
         ):
-            if arr.shape != (4,):
-                raise ValueError(f"{name} must have shape (4,), got {arr.shape}")
+            if arr.shape != (k,):
+                raise ValueError(f"{name} must have shape ({k},), got {arr.shape}")
         if not np.isclose(self.intent_prior.sum(), 1.0):
             raise ValueError("intent_prior must sum to 1.0")
 
     @classmethod
-    def greedy_casino(cls) -> "MABUCDatasets":
+    def from_environment(cls, env_matrix: np.ndarray, k: int) -> "MABUCDatasets":
+        env_matrix = np.asarray(env_matrix, dtype=np.float64)
+        if env_matrix.shape != (k, k):
+            raise ValueError(
+                f"env_matrix must have shape ({k}, {k}), got {env_matrix.shape}"
+            )
         return cls(
-            observational=np.full(4, 0.20, dtype=np.float64),
-            experimental=np.full(4, 0.40, dtype=np.float64),
-            intent_prior=np.full(4, 0.25, dtype=np.float64),
+            observational=np.full(k, 0.20, dtype=np.float64),
+            experimental=np.mean(env_matrix, axis=1),
+            intent_prior=np.full(k, 1.0 / k, dtype=np.float64),
         )
 
 
-GREEDY_CASINO_DATASETS = MABUCDatasets.greedy_casino()
+GREEDY_CASINO_DATASETS = MABUCDatasets.from_environment(
+    GreedyCasino(k=4, rng=np.random.default_rng(0)).matrix,
+    k=4,
+)
