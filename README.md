@@ -1,87 +1,156 @@
 # Counterfactual Data-Fusion for Online Reinforcement Learners
 
-This repository contains a complete Python implementation of the paper **Counterfactual Data-Fusion for Online Reinforcement Learners**.
-
-It demonstrates how Reinforcement Learning agents can use causal inference, counterfactual reasoning, and data fusion to detect and outsmart hidden confounders in their environment, drastically improving learning speed and total rewards.
+A Python implementation of [Counterfactual Data-Fusion for Online Reinforcement Learners](https://proceedings.mlr.press/v70/forney17a.html) (Forney, Pearl, Bareinboim, ICML 2017). The code reproduces the **Greedy Casino** multi-armed bandit with unobserved confounders (MABUC) and compares three learning agents: a naive baseline, an online **Regret Decision Criterion (RDC)** agent, and a **Data-Fusion RDC** agent that fuses observational and experimental priors via counterfactual reasoning.
 
 ## Motivation
 
-How can an agent safely learn from the behavior of others when there are hidden factors at play?
-- Traditionally, RL agents learn through their own trial-and-error. 
-- Could theoretically learn faster by watching others but, hidden variables - called Unobserved Confounders (UCs) - can make this observed data misleading. 
-- Author proposes using causal inference to fuse different types of data to speed up learning without falling into the traps set by these hidden variables
+How can an agent safely learn from the behavior of others when hidden factors are at play?
 
-## Overview
+- Traditionally, RL agents learn through their own trial-and-error.
+- They could learn faster by watching others, but **unobserved confounders (UCs)** can make observational data misleading.
+- The paper shows how **causal inference** and **counterfactual data fusion** let an agent combine observational logs with experimental trials without falling into confounder traps.
 
-The differences between observational, experimental, and counterfactual data, and why the third type is the crucial missing piece.
+## Core ideas
 
-In causal inference data is categorized by _how_ it was generated
-- often framed using Judea Pearl’s "Ladder of Causation."
+Causal data is often described using Judea Pearl’s ladder of causation. An agent may have access to three kinds of information:
 
-We can look at the three types of data an agent might use to learn:
+| **Type** | **What it represents** | **Example (self-driving car)** |
+| --- | --- | --- |
+| **Observational** | **Seeing:** passively watching others act | Logs of when a human brakes or accelerates, without knowing why |
+| **Experimental** | **Doing:** the agent intervenes and observes outcomes | Random brake tests on an empty track |
+| **Counterfactual** | **Imagining:** “what if” a different action had been taken in a past situation | Given the human braked and avoided a crash, what would have happened if they had accelerated instead? |
 
-| **Type**           | **What it represents**                                                                                                | **Example (Self-Driving Car)**                                                                                                                        |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Observational**  | **Seeing:** Data collected passively by watching others act in the world.                                             | Watching a human drive. You record when they brake and accelerate, but you don't always know _why_.                                                   |
-| **Experimental**   | **Doing:** Data collected by the agent actively taking an action to see what happens.                                 | The agent randomly testing the brakes on an empty track to see how the car reacts.                                                                    |
-| **Counterfactual** | **Imagining:** Reasoning about "what if" a different action was taken in a specific, already-observed past situation. | "Given the human _did_ brake and avoided a crash, what _would have_ happened to that exact car in that exact moment if they had accelerated instead?" |
+Standard RL relies heavily on experimental data (exploration). Learning only from observational data is fast but dangerous when UCs influence both actions and rewards. The paper argues that **counterfactual reasoning** is the missing piece for safely fusing observational and experimental data.
 
-Traditional RL relies heavily on Experimental data (trial-and-error exploration)
-- effective but can be slow and, in the real world, dangerous
-- would be much faster to learn from Observational data (like massive logs of human drivers). 
+The fusion workflow, formalized with a **Structural Causal Model (SCM)**:
 
-However, the paper argues that the agent needs that third level - Counterfactual data - to safely and effectively fuse the first two.
+1. **Observe** - collect or receive observational logs.
+2. **Infer (counterfactual)** - estimate hidden-state effects: given action and outcome, how likely is a UC?
+3. **Fuse** - when confident, relabel or combine data points with counterfactual deductions to update the policy faster.
 
-Observational data may be suboptimal and an agent that copies it would inherit all of the data's mistakes.
+When counterfactual uncertainty is high, the agent falls back to targeted exploration (experimental data) only for those situations-combining the speed of observational learning with the safety of selective experimentation.
 
-This paper focuses on Unobserved Confounders (UCs) - even if the human is acting perfectly, they might be basing their decisions on information the RL agent cannot see.
-- UCs  influence both the action taken and the final outcome, confounding the data.
+## The Greedy Casino problem
 
-This is what the **fusion engine** in the paper addresses - uses counterfactuals to bridge the gap between observational logs and experimental trial-and-error. 
+The flagship environment is a casino with **K slot machines** (arms) and **K intent profiles** (hidden gambler states). The casino observes confounders the gambler cannot see (e.g. sobriety and blinking lights in the original 4×4 setup) and rigs payouts so that **natural choices** win only **20%** of the time, while **randomized play** wins **40%**. An optimal agent that uses **intent** as a proxy for hidden state and applies the **RDC** can reach roughly **60%** win rate.
 
-If there exists data points that rely on the UCs, then we can salvage these data points to learn something valuable.
+In the original scenario, intent is deterministic: \(X \leftarrow B + 2D\) with binary \(B, D\), mapping four UC profiles to four machines. The payout matrix is fixed (see [docs/THE_CASINO.md](docs/THE_CASINO.md) for the full derivation and the observational vs. experimental paradox).
 
-We use an SCM to formalise this process:
-1. **Observe:** The agent looks at the observational log.
-2. **Infer (Counterfactual):** The agent uses its SCM to calculate the probability of the hidden state. It asks, "Given this action and outcome, what is the probability that this is due to a UC?"
-3. **Fuse:** If the probability is high, the agent essentially re-labels that data point. It takes the observation and fuses it with its counterfactual deduction.
+## Agents
 
-This allows the agent to safely extract a useful rule from imperfect data and allows the online RL agent to learn optimal policies faster than traditional methods.
+Each simulation step: the environment samples an **intent**, each agent chooses an **action** (arm), and all agents share the same Bernoulli reward for a given (intent, action) pair. Cumulative average reward is plotted over time.
 
-Instead of blindly exploring everything (which is slow and dangerous) or blindly trusting the logs (which falls into the confounder trap), the agent uses a highly targeted approach.
+| Agent | Module | Uses intent? | Data fusion? | Role |
+| --- | --- | --- | --- | --- |
+| **Standard MAB** | `core/standard_mab.py` | No | No | Epsilon-greedy baseline; ignores confounding |
+| **RDC Agent** | `core/rdc_agent.py` | Yes | No | Learns a \(Q\)-table over (intent, action); explores with decaying \(\epsilon\) |
+| **Data Fusion RDC** | `core/data_fusion_rdc_agent.py` | Yes | Yes | Extends RDC with fused counterfactual estimates from priors + online samples |
 
-The agent 
-- calculates the probability of a hidden confounder using its counterfactual engine. 
-- if it can confidently deduce why the observed data looks the way it does, it safely fuses that data and updates its policy without taking any physical risks.
-- if the counterfactual math yields high uncertainty - meaning the observed data doesn't make sense with the causal model - the agent flags that specific situation. That is the trigger. It pauses learning from the log and switches to active, trial-and-error exploration (Experimental data) just for that specific scenario to figure out what's really going on.
+The Data-Fusion agent implements three fusion strategies from the paper (Equations 3, 7-9), combined via inverse-variance weighting:
 
-By only taking risks when the human data is truly confusing, the agent gets the best of both worlds: the speed of observational learning and the safety of experimental verification.
+- **Cross-intent learning** - deduce payouts across intents from experimental averages.
+- **Cross-arm learning** - relate arms under the same intent using shared intent priors.
+- **Combined approach** - fuse sample, cross-intent, and cross-arm estimates for each \((\text{intent}, \text{action})\) cell.
 
-## The Greedy Casino Problem
+See [docs/RDCAGENT.md](docs/RDCAGENT.md) and [docs/DATA_FUSION.md](docs/DATA_FUSION.md) for theory and equations.
 
-Imagine a casino with four new slot machines. The casino uses hidden sensors to detect if a gambler is drunk or sober, and knows whether the machines' lights are blinking or not. These are **Unobserved Confounders (UCs)** to the gambler. 
+## Project structure
 
-The casino knows that gamblers' natural machine choices are perfectly predictable based on these UCs. They rig the payouts so that if a gambler follows their "natural intent," they will only win 20% of the time. If an investigator forces gamblers to play randomly, the win rate is 40%. 
+```
+.
+├── main.py                      # CLI entry point
+├── requirements.txt
+├── core/
+│   ├── rdc_agent.py             # RDC agent (Q-table, epsilon decay)
+│   ├── data_fusion_rdc_agent.py # Fusion estimates + action selection
+│   ├── standard_mab.py          # Naive epsilon-greedy baseline
+│   └── plotting.py              # Cumulative reward plots
+├── scenarios/
+│   ├── original/                # Paper 4×4 Greedy Casino
+│   │   ├── greedy_casino.py
+│   │   ├── mabuc_datasets.py    # Fixed 20% / 40% priors
+│   │   └── run.py
+│   └── generalized/             # K×K extension
+│       ├── greedy_casino.py     # Procedural payout matrix
+│       ├── mabuc_datasets.py    # Priors from environment matrix
+│       └── run.py
+└── docs/
+    ├── THE_CASINO.md
+    ├── RDCAGENT.md
+    └── DATA_FUSION.md
+```
 
-To beat the casino, an agent cannot just play randomly. It must use the **Regret Decision Criterion (RDC)**: acknowledging its own natural intent as a proxy for the hidden confounders, and actively choosing the counterfactual action with the highest expected payout. This optimal strategy yields a 60% win rate.
+## Getting started
+
+### Requirements
+
+- Python 3.8+
+- [NumPy](https://numpy.org/)
+- [Matplotlib](https://matplotlib.org/)
+
+### Installation
+
+```bash
+git clone <repository-url>
+cd Counterfactual-Data-Fusion-for-Online-Reinforcement-Learners-Paper-Implementation
+pip install -r requirements.txt
+```
+
+### Running simulations
+
+`main.py` runs all three agents in parallel and saves a plot of cumulative average reward.
+
+```bash
+# Original 4×4 scenario (default T = 50,000)
+python main.py --mode original
+
+# Generalized K×K scenario (default T = 400 × k²)
+python main.py --mode generalized --k 20
+
+# Custom step count, seed, and output path
+python main.py --mode original --steps 10000 --seed 0 --output my_run.png
+python main.py --mode generalized -k 10 --steps 50000 --output k10.png
+```
+
+| Flag | Description |
+| --- | --- |
+| `--mode` | **Required.** `original` (fixed 4×4 casino) or `generalized` (K×K) |
+| `-k`, `--k` | Number of arms/intents in generalized mode (default: `20`) |
+| `--steps` | Total time steps \(T\). Default: `50000` (original), `400 × k²` (generalized) |
+| `--seed` | Random seed (default: `42`) |
+| `--output` | Path for the saved plot (default: `results.png`) |
+
+### Expected behavior
+
+On the **original** scenario you should see:
+
+- **Standard MAB** - converges toward the misleading observational average (~20%).
+- **RDC Agent** - improves over time toward the optimal counterfactual policy (~60%) via online learning.
+- **Data Fusion RDC** - reaches high performance much faster by fusing fixed observational/experimental priors with online counterfactual updates.
+
+The **generalized** scenario uses a random \(K \times K\) payout matrix (diagonal “natural” payouts at 0.20, off-diagonal uniform in \([0.40, 0.80]\)) and derives MABUC priors from that matrix. Larger `k` requires more steps (default scales as \(400k^2\)) for stable learning curves.
+
+## Documentation
+
+| Document | Contents |
+| --- | --- |
+| [docs/THE_CASINO.md](docs/THE_CASINO.md) | Environment setup, payout matrix, observational vs. experimental paradox |
+| [docs/RDCAGENT.md](docs/RDCAGENT.md) | SCMs, MABUC framework, RDC action selection |
+| [docs/DATA_FUSION.md](docs/DATA_FUSION.md) | Master equation, three fusion strategies, combined estimator |
 
 ## Features
 
-* **Greedy Casino Environment:** A custom, lightweight MAB environment that generates hidden states and calculates natural intents without relying on heavy RL frameworks.
-* **Standard RDC Agent:** An agent that learns to beat the casino from scratch using counterfactual reasoning.
-* **Data-Fusion RDC Agent:** An advanced agent that mathematically fuses prior Observational (20% win rate) and Experimental (40% win rate) datasets to deduce counterfactual payouts instantly.
-* **Three Fusion Strategies Implemented:** 
-    * *Cross-Intent Learning*: Deducing payouts across different hidden states.
-    * *Cross-Arm Learning*: Deducing payouts across different machines using inverse-variance weighting.
-    * *Combined Approach*: Fusing all available data for maximum statistical robustness.
-
+- **Greedy Casino environment** - lightweight MABUC simulator (no heavy RL framework).
+- **Standard RDC agent** - intent-conditioned Q-learning with epsilon decay.
+- **Data-Fusion RDC agent** - cross-intent, cross-arm, and combined fusion with variance-weighted estimates.
+- **Two scenarios** - faithful 4×4 reproduction and scalable K×K generalization.
+- **Comparison plots** - cumulative average reward for all agents on one chart.
 
 ## References
 
-This implementation is based on the theoretical frameworks of Structural Causal Models (SCMs) and Multi-Armed Bandits with Unobserved Confounders (MABUC).
+This implementation follows **Structural Causal Models (SCMs)** and **Multi-Armed Bandits with Unobserved Confounders (MABUC)** as in Bareinboim et al. and Forney et al.
 
-* *Counterfactual Data-Fusion for Online Reinforcement Learners* (Bareinboim, Forney, Pearl).
-```
+```bibtex
 @InProceedings{pmlr-v70-forney17a,
   title = 	 {Counterfactual Data-Fusion for Online Reinforcement Learners},
   author =       {Andrew Forney and Judea Pearl and Elias Bareinboim},
@@ -97,5 +166,6 @@ This implementation is based on the theoretical frameworks of Structural Causal 
   url = 	 {https://proceedings.mlr.press/v70/forney17a.html},
   abstract = 	 {The Multi-Armed Bandit problem with Unobserved Confounders (MABUC) considers decision-making settings where unmeasured variables can influence both the agent’s decisions and received rewards (Bareinboim et al., 2015). Recent findings showed that unobserved confounders (UCs) pose a unique challenge to algorithms based on standard randomization (i.e., experimental data); if UCs are naively averaged out, these algorithms behave sub-optimally, possibly incurring infinite regret. In this paper, we show how counterfactual-based decision-making circumvents these problems and leads to a coherent fusion of observational and experimental data. We then demonstrate this new strategy in an enhanced Thompson Sampling bandit player, and support our findings’ efficacy with extensive simulations.}
 }
-
 ```
+
+Paper: [Counterfactual Data-Fusion for Online Reinforcement Learners](https://proceedings.mlr.press/v70/forney17a.html)

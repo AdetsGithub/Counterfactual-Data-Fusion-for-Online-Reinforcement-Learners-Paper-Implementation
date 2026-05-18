@@ -16,9 +16,9 @@ class MABUCDatasets:
     under uniform intent (0.25 * (0.20 + 0.30 + 0.50 + 0.60) = 0.40).
     """
 
-    observational: np.ndarray  # E[Y|X] — natural win rate per arm
-    experimental: np.ndarray  # E[Y_x] — randomized trial win rate per arm
-    intent_prior: np.ndarray  # P(I) — probability of each intent profile
+    observational: np.ndarray  # E[Y|X] - natural win rate per arm
+    experimental: np.ndarray  # E[Y_x] - randomized trial win rate per arm
+    intent_prior: np.ndarray  # P(I) - probability of each intent profile
 
     def __post_init__(self):
         for name, arr in (

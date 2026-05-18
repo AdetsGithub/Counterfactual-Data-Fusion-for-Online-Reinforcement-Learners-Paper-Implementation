@@ -1,18 +1,17 @@
 """Data-fusion RDC agent: cross-intent, cross-arm, and combined fusion estimates.
 
-Usage: agent = DataFusionRDCAgent(); a = agent.choose_action(intent); agent.update(intent, a, reward)
+Usage: agent = DataFusionRDCAgent(datasets=...); a = agent.choose_action(intent)
 """
 
 import numpy as np
 
-from mabuc_datasets import GREEDY_CASINO_DATASETS, MABUCDatasets
-from rdc_agent import RDCAgent
+from core.rdc_agent import RDCAgent
 
 _MIN_VARIANCE = 1e-12
 
 
 class DataFusionRDCAgent(RDCAgent):
-    def __init__(self, datasets: MABUCDatasets = GREEDY_CASINO_DATASETS, **kwargs):
+    def __init__(self, datasets, **kwargs):
         super().__init__(**kwargs)
         self.datasets = datasets
 
@@ -20,14 +19,14 @@ class DataFusionRDCAgent(RDCAgent):
         intent = self._validate_intent(intent)
         action = self._validate_action(action)
         n = self.N_table[intent, action]
-        
+
         if n < 2:
-            return 1.0 # High uncertainty for cold start
-            
+            return 1.0  # High uncertainty for cold start
+
         p = self.Q_table[intent, action]
         # Clamp probability to prevent variance collapsing to 0
         p_smoothed = max(0.05, min(0.95, p))
-        
+
         # Divide by n to calculate the variance of the sample mean
         return (p_smoothed * (1.0 - p_smoothed)) / n
 
@@ -35,7 +34,7 @@ class DataFusionRDCAgent(RDCAgent):
         query_action = self._validate_action(query_action)
         query_intent = self._validate_intent(query_intent)
         residual = self.datasets.experimental[query_action]
-        
+
         for i in range(self.num_intents):
             if i == query_intent:
                 continue
@@ -44,7 +43,7 @@ class DataFusionRDCAgent(RDCAgent):
                 est = self.datasets.experimental[query_action]
             else:
                 est = self.Q_table[i, query_action]
-                
+
             residual -= est * self.datasets.intent_prior[i]
         return residual
 
@@ -61,13 +60,13 @@ class DataFusionRDCAgent(RDCAgent):
         denominator = self._arm_residual(alt_arm, query_intent)
         if abs(denominator) <= _MIN_VARIANCE:
             return None
-            
+
         # If the alternate arm is unexplored, substitute the experimental average
         if self.N_table[query_intent, alt_arm] < 1:
             alt_est = self.datasets.experimental[alt_arm]
         else:
             alt_est = self.Q_table[query_intent, alt_arm]
-            
+
         numerator = (
             self._arm_residual(query_action, query_intent) * alt_est
         )
