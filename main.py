@@ -7,11 +7,14 @@ import numpy as np
 
 from data_fusion_rdc_agent import DataFusionRDCAgent
 from greedy_casino import GreedyCasino
+from mabuc_datasets import MABUCDatasets
 from rdc_agent import RDCAgent
 
+K = 20
 
-def sample_reward(intent, action, rng):
-    p = GreedyCasino.PAYOUT_MATRIX[int(action), int(intent)]
+
+def sample_reward(matrix, intent, action, rng):
+    p = matrix[int(action), int(intent)]
     return int(rng.binomial(1, p))
 
 
@@ -47,13 +50,23 @@ class StandardMAB:
         self.Q_table[action] += (reward - self.Q_table[action]) / n
 
 
-def run_simulation(T=5000, seed=42):
+def run_simulation(k, T, seed=42):
     rng = np.random.default_rng(seed)
-    env = GreedyCasino(rng=rng)
+    env = GreedyCasino(k=k, rng=rng)
+    datasets = MABUCDatasets.from_environment(env.matrix, k=k)
     agents = {
-        "Standard MAB": StandardMAB(rng=np.random.default_rng(seed)),
-        "RDC Agent": RDCAgent(rng=np.random.default_rng(seed)),
-        "Data Fusion RDC": DataFusionRDCAgent(rng=np.random.default_rng(seed)),
+        "Standard MAB": StandardMAB(
+            num_arms=k, rng=np.random.default_rng(seed)
+        ),
+        "RDC Agent": RDCAgent(
+            num_arms=k, num_intents=k, rng=np.random.default_rng(seed)
+        ),
+        "Data Fusion RDC": DataFusionRDCAgent(
+            datasets=datasets,
+            num_arms=k,
+            num_intents=k,
+            rng=np.random.default_rng(seed),
+        ),
     }
     wins = {name: 0 for name in agents}
     histories = {name: [] for name in agents}
@@ -72,7 +85,9 @@ def run_simulation(T=5000, seed=42):
         for name, agent in agents.items():
             action = actions[name]
             if action not in reward_cache:
-                reward_cache[action] = sample_reward(intent, action, env.rng)
+                reward_cache[action] = sample_reward(
+                    env.matrix, intent, action, env.rng
+                )
             reward = reward_cache[action]
 
             if name == "Standard MAB":
@@ -105,14 +120,21 @@ def plot_results(histories, output="results.png"):
 
 def main():
     parser = argparse.ArgumentParser(description="Run Greedy Casino simulation.")
-    parser.add_argument("--steps", type=int, default=5000, help="Total steps T")
+    parser.add_argument("-k", "--k", type=int, default=K, help="Number of arms/intents")
+    parser.add_argument(
+        "--steps",
+        type=int,
+        default=None,
+        help="Total steps T (default: 400 * k^2)",
+    )
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument(
         "--output", default="results.png", help="Output plot path"
     )
     args = parser.parse_args()
 
-    histories = run_simulation(T=args.steps, seed=args.seed)
+    T = args.steps if args.steps is not None else int(400 * (args.k ** 2))
+    histories = run_simulation(k=args.k, T=T, seed=args.seed)
     plot_results(histories, output=args.output)
 
 
