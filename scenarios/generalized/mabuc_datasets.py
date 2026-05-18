@@ -16,9 +16,9 @@ class MABUCDatasets:
     under uniform intent (mean over intent columns per action row).
     """
 
-    observational: np.ndarray  # E[Y|X] — natural win rate per arm
-    experimental: np.ndarray  # E[Y_x] — randomized trial win rate per arm
-    intent_prior: np.ndarray  # P(I) — probability of each intent profile
+    observational: np.ndarray  # E[Y|X] - natural win rate per arm
+    experimental: np.ndarray  # E[Y_x] - randomized trial win rate per arm
+    intent_prior: np.ndarray  # P(I) - probability of each intent profile
 
     def __post_init__(self):
         k = len(self.observational)
