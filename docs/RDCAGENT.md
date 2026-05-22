@@ -13,7 +13,7 @@ We have two types of variables:
 
 - **Exogenous ($U$):** Hidden, unobserved variables (e.g., the gambler's sobriety, the blinking lights).
 
-tThis SCM blueprint generates three distinct "worlds" of probability:
+This SCM blueprint generates three distinct "worlds" of probability:
 
 1. **The Observational World ($P(V=v)$):** This represents natural, unbothered behavior. Gamblers walk in, their hidden traits ($U$) influence their machine choice naturally, and we record the results.
 
